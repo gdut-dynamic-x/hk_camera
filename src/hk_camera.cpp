@@ -268,11 +268,11 @@ void HKCameraNodelet::onFrameCB(unsigned char* pData, MV_FRAME_OUT_INFO_EX* pFra
           ROS_WARN("Trigger not in sync!");
           trigger_not_sync_ = true;
         }
-//        else if ((now - pkt.trigger_time_).toSec() < 0)
-//        {
-//          ROS_WARN("Trigger not in sync! Maybe any CAN frames have be dropped?");
-//          trigger_not_sync_ = true;
-//        }
+        //        else if ((now - pkt.trigger_time_).toSec() < 0)
+        //        {
+        //          ROS_WARN("Trigger not in sync! Maybe any CAN frames have be dropped?");
+        //          trigger_not_sync_ = true;
+        //        }
         else if ((now - pkt.trigger_time_).toSec() > 0.013)
         {
           ROS_WARN("Trigger not in sync! Maybe imu %s does not actually trigger camera?", imu_name_.c_str());
@@ -376,8 +376,6 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
     config.exposure_min = exposure_min_;
     config.gain_auto = gain_auto_;
     config.gain_value = gain_value_;
-//    config.gamma_selector = gamma_selector_;
-//    config.gamma_value = gamma_value_;
     config.white_auto = white_auto_;
     config.white_selector = white_selector_;
     config.stop_grab = stop_grab_;
@@ -394,7 +392,6 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
   if (config.exposure_auto)
   {
     _MVCC_FLOATVALUE_T exposure_time;
-//    assert(MV_CC_SetIntValue(dev_handle_, "AutoExposureTimeLowerLimit", config.exposure_min) == MV_OK);
     assert(MV_CC_SetIntValue(dev_handle_, "AutoExposureTimeLowerLimit", config.exposure_min) == MV_OK);
     assert(MV_CC_SetIntValue(dev_handle_, "AutoExposureTimeUpperLimit", config.exposure_max) == MV_OK);
     assert(MV_CC_SetEnumValue(dev_handle_, "ExposureAuto", MV_EXPOSURE_AUTO_MODE_CONTINUOUS) == MV_OK);
