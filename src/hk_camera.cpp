@@ -45,7 +45,7 @@ void HKCameraNodelet::onInit()
   nh_.param("exposure_auto", exposure_auto_, true);
   nh_.param("exposure_value", exposure_value_, 20.0);
   nh_.param("exposure_max", exposure_max_, 3000.0);
-  nh_.param("exposure_min", exposure_min_, 20.0);
+  nh_.param("exposure_min", exposure_min_, 50.0);
   nh_.param("white_auto", white_auto_, true);
   nh_.param("white_selector", white_selector_, 0);
   nh_.param("enable_resolution", enable_resolution_, false);
@@ -268,11 +268,11 @@ void HKCameraNodelet::onFrameCB(unsigned char* pData, MV_FRAME_OUT_INFO_EX* pFra
           ROS_WARN("Trigger not in sync!");
           trigger_not_sync_ = true;
         }
-//        else if ((now - pkt.trigger_time_).toSec() < 0)
-//        {
-//          ROS_WARN("Trigger not in sync! Maybe any CAN frames have be dropped?");
-//          trigger_not_sync_ = true;
-//        }
+        //        else if ((now - pkt.trigger_time_).toSec() < 0)
+        //        {
+        //          ROS_WARN("Trigger not in sync! Maybe any CAN frames have be dropped?");
+        //          trigger_not_sync_ = true;
+        //        }
         else if ((now - pkt.trigger_time_).toSec() > 0.013)
         {
           ROS_WARN("Trigger not in sync! Maybe imu %s does not actually trigger camera?", imu_name_.c_str());
@@ -376,8 +376,6 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
     config.exposure_min = exposure_min_;
     config.gain_auto = gain_auto_;
     config.gain_value = gain_value_;
-    config.gamma_selector = gamma_selector_;
-    config.gamma_value = gamma_value_;
     config.white_auto = white_auto_;
     config.white_selector = white_selector_;
     config.stop_grab = stop_grab_;
@@ -453,22 +451,6 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
     assert(MV_CC_SetEnumValue(dev_handle_, "BalanceWhiteAuto", MV_BALANCEWHITE_AUTO_OFF) == MV_OK);
     assert(MV_CC_GetIntValue(dev_handle_, "BalanceRatio", &white_value) == MV_OK);
     config.white_value = white_value.nCurValue;
-  }
-
-  switch (config.gamma_selector)
-  {
-    case 0:
-      assert(MV_CC_SetBoolValue(dev_handle_, "GammaEnable", true) == MV_OK);
-      assert(MV_CC_SetEnumValue(dev_handle_, "GammaSelector", MV_GAMMA_SELECTOR_SRGB) == MV_OK);
-      break;
-    case 1:
-      assert(MV_CC_SetBoolValue(dev_handle_, "GammaEnable", true) == MV_OK);
-      assert(MV_CC_SetEnumValue(dev_handle_, "GammaSelector", MV_GAMMA_SELECTOR_USER) == MV_OK);
-      assert(MV_CC_SetGamma(dev_handle_, config.gamma_value) == MV_OK);
-      break;
-    case 2:
-      assert(MV_CC_SetBoolValue(dev_handle_, "GammaEnable", false) == MV_OK);
-      break;
   }
 
   take_photo_ = config.take_photo;
