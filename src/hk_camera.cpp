@@ -14,7 +14,7 @@
 namespace hk_camera
 {
 PLUGINLIB_EXPORT_CLASS(hk_camera::HKCameraNodelet, nodelet::Nodelet)
-HKCameraNodelet::HKCameraNodelet()
+HKCameraNodelet::HKCameraNodelet() : d_nh(), d_it(d_nh)
 {
 }
 
@@ -212,6 +212,7 @@ void HKCameraNodelet::onInit()
   }
 
   camera_change_sub = nh_.subscribe("/camera_name", 50, &hk_camera::HKCameraNodelet::cameraChange, this);
+  FpsDown();
 }
 
 void HKCameraNodelet::cameraChange(const std_msgs::String camera_change)
@@ -531,4 +532,25 @@ uint32_t HKCameraNodelet::receive_trigger_counter_ = 0;
 bool HKCameraNodelet::enable_resolution_ = false;
 int HKCameraNodelet::resolution_ratio_width_ = 1440;
 int HKCameraNodelet::resolution_ratio_height_ = 1080;
+
+void HKCameraNodelet::FpsDown()
+{
+  d_sub = d_it.subscribe("/hk_camera/image_raw", 10, &HKCameraNodelet::imageCallback, this);
+  d_pub = d_it.advertise("/hk_camera/image_raw_down", 10);
+  target_fps = 40;
+  last_pub_time = ros::Time::now();
+}
+
+void HKCameraNodelet::imageCallback(const sensor_msgs::ImageConstPtr& msg)
+{
+  ros::Time current_time = ros::Time::now();
+  double elapsed_time = (current_time - last_pub_time).toSec();
+  double target_interval = 1.0 / target_fps;
+  if (elapsed_time >= target_interval)
+  {
+    d_pub.publish(msg);
+    last_pub_time = current_time;
+  }
+}
+
 }  // namespace hk_camera
