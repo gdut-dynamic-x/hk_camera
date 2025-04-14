@@ -212,7 +212,6 @@ void HKCameraNodelet::onInit()
   }
 
   camera_change_sub = nh_.subscribe("/camera_name", 50, &hk_camera::HKCameraNodelet::cameraChange, this);
-  FpsDown();
 }
 
 void HKCameraNodelet::cameraChange(const std_msgs::String camera_change)
@@ -498,6 +497,19 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
   }
 
   take_photo_ = config.take_photo;
+
+  is_fps_down = config.is_fps_down;
+  if (is_fps_down)
+  {
+    ROS_WARN("Fps down mode is on.");
+    FpsDown();
+  }
+  else
+  {
+    ROS_WARN("Fps down mode is off.");
+    d_pub.shutdown();
+    d_pub.shutdown();
+  }
   //  Width offset of image
   //  width_ = config.width_offset;
 }

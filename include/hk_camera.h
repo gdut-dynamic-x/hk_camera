@@ -101,6 +101,7 @@ private:
   image_transport::Subscriber d_sub;
   double target_fps;
   ros::Time last_pub_time;
+  bool is_fps_down;
 };
 }  // namespace hk_camera
 
