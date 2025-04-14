@@ -34,6 +34,10 @@ public:
   void onInit() override;
   static sensor_msgs::Image image_;
   static sensor_msgs::Image image_rect;
+  void timerCallback(const ros::TimerEvent&);
+
+  void FpsDown();
+  void imageCallback(const sensor_msgs::ImageConstPtr& msg);
 
 private:
   void reconfigCB(CameraConfig& config, uint32_t level);
@@ -90,6 +94,13 @@ private:
   ros::ServiceServer imu_correspondence_service_;
   static void __stdcall onFrameCB(unsigned char* pData, MV_FRAME_OUT_INFO_EX* pFrameInfo, void* pUser);
   ros::Subscriber camera_change_sub;
+
+  ros::NodeHandle d_nh;
+  image_transport::ImageTransport d_it;
+  image_transport::Publisher d_pub;
+  image_transport::Subscriber d_sub;
+  double target_fps;
+  ros::Time last_pub_time;
 };
 }  // namespace hk_camera
 
