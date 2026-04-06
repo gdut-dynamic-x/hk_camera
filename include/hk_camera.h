@@ -5,19 +5,17 @@
 #ifndef SRC_HK_CAMERA_INCLUDE_GALAXY_CAMERA_H_
 #define SRC_HK_CAMERA_INCLUDE_GALAXY_CAMERA_H_
 #include <nodelet/nodelet.h>
+#include <algorithm>
 #include <image_transport/image_transport.h>
 #include <dynamic_reconfigure/server.h>
 #include <hk_camera/CameraConfig.h>
 #include <camera_info_manager/camera_info_manager.h>
-#include <dynamic_reconfigure/client.h>
+#include <ros/time.h>
 #include <sensor_msgs/TimeReference.h>
-#include <rm_msgs/CameraStatus.h>
 #include <string>
-#include <thread>
-#include <chrono>
+#include <mutex>
 #include "libMVSapi/MvCameraControl.h"
 #include <rm_msgs/EnableImuTrigger.h>
-#include <termios.h>
 #include <std_msgs/String.h>
 #include <rm_msgs/StatusChange.h>
 #include <std_msgs/Bool.h>
@@ -39,10 +37,6 @@ public:
   static sensor_msgs::Image image_;
   static sensor_msgs::Image image_rect;
   void timerCallback(const ros::TimerEvent&);
-
-
-  void FpsDown();
-  void imageCallback(const sensor_msgs::ImageConstPtr& msg);
 
 private:
   void reconfigCB(CameraConfig& config, uint32_t level);
@@ -105,14 +99,11 @@ private:
   ros::Subscriber camera_change_sub;
   ros::Subscriber camera_stop_sub_;
 
-  ros::NodeHandle d_nh_;
-  image_transport::ImageTransport d_it_;
   image_transport::Publisher d_pub_;
-  image_transport::Subscriber d_sub_;
-  std::string camera_raw_;
-  double target_fps_;
-  ros::Time last_pub_time_;
-  bool is_fps_down_;
+  double target_fps_{40.0};
+  ros::WallTime next_pub_time_;
+  bool is_fps_down_{};
+  std::mutex fps_down_mutex_;
 
   std::string node_name_;
 };
