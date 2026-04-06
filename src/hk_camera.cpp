@@ -4,29 +4,22 @@
 #include <pluginlib/class_list_macros.h>
 #include <hk_camera.h>
 #include <utility>
-#include <ros/time.h>
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <iostream>
-#include <fstream>
-#include <string>
-#include <std_msgs/Bool.h>
 
 namespace hk_camera
 {
 PLUGINLIB_EXPORT_CLASS(hk_camera::HKCameraNodelet, nodelet::Nodelet)
-HKCameraNodelet::HKCameraNodelet() : d_nh_(), d_it_(d_nh_)
-{
-}
+HKCameraNodelet::HKCameraNodelet() = default;
 
 void HKCameraNodelet::onInit()
 {
   nh_ = this->getPrivateNodeHandle();
   node_name_ = nh_.getNamespace();
-  ROS_INFO("node_name:%s",node_name_.substr(1).c_str());
   image_transport::ImageTransport it(nh_);
   pub_ = it.advertiseCamera("image_raw", 1);
-  camera_raw_ = pub_.getTopic();
+  d_pub_ = it.advertise("image_raw_down", 1);
   this->status_change_srv_ = nh_.advertiseService("/exposure_status_switch", &HKCameraNodelet::changeStatusCB, this);
 
   nh_.param("camera_frame_id", image_.header.frame_id, std::string("camera_optical_frame"));
@@ -58,6 +51,7 @@ void HKCameraNodelet::onInit()
   nh_.param("resolution_ratio_height", resolution_ratio_height_, 1080);
   nh_.param("stop_grab", stop_grab_, false);
   nh_.param("is_fps_down", is_fps_down_, false);
+  nh_.param("target_fps", target_fps_, 40.0);
 
   info_manager_.reset(new camera_info_manager::CameraInfoManager(nh_, camera_name_, camera_info_url_));
 
@@ -222,7 +216,7 @@ void HKCameraNodelet::initializeCamera()
   {
     assert(MV_CC_SetEnumValue(dev_handle_, "TriggerMode", 0) == MV_OK);
   }
-  MV_CC_RegisterImageCallBackEx(dev_handle_, onFrameCB, dev_handle_);
+  MV_CC_RegisterImageCallBackEx(dev_handle_, onFrameCB, this);
 
   if (MV_CC_StartGrabbing(dev_handle_) == MV_OK)
   {
@@ -256,7 +250,7 @@ void HKCameraNodelet::timerCallback(const ros::TimerEvent&) {
 bool HKCameraNodelet::changeStatusCB(rm_msgs::StatusChange::Request& change, rm_msgs::StatusChange::Response& res)
 {
   if (change.target)
-    nh_.param("exposure_value_windmill", exposure_value_, 20.0);
+    nh_.param("exposure_value_windmill", exposure_value_, 3000.0);
   else
     nh_.param("exposure_value", exposure_value_, 20.0);
   assert(MV_CC_SetEnumValue(dev_handle_, "ExposureAuto", MV_EXPOSURE_AUTO_MODE_OFF) == MV_OK);
@@ -326,6 +320,7 @@ bool HKCameraNodelet::fifoRead(TriggerPacket& pkt)
 
 void HKCameraNodelet::onFrameCB(unsigned char* pData, MV_FRAME_OUT_INFO_EX* pFrameInfo, void* pUser)
 {
+  auto* self = static_cast<HKCameraNodelet*>(pUser);
   if (pFrameInfo)
   {
     ros::Time now = ros::Time::now();
@@ -434,6 +429,27 @@ void HKCameraNodelet::onFrameCB(unsigned char* pData, MV_FRAME_OUT_INFO_EX* pFra
       //    }
     }
     pub_.publish(image_, info_);
+
+    bool publish_downsampled = false;
+    if (self->is_fps_down_)
+    {
+      const ros::WallTime current_time = ros::WallTime::now();
+      const ros::WallDuration interval(1.0 / self->target_fps_);
+      {
+        std::lock_guard<std::mutex> lock(self->fps_down_mutex_);
+        if (self->next_pub_time_.isZero())
+          self->next_pub_time_ = current_time;
+        if (current_time >= self->next_pub_time_)
+        {
+          do
+            self->next_pub_time_ += interval;
+          while (self->next_pub_time_ <= current_time);
+          publish_downsampled = true;
+        }
+      }
+    }
+    if (publish_downsampled)
+      self->d_pub_.publish(image_);
   }
   else
     ROS_ERROR("Grab image failed!");
@@ -457,6 +473,8 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
     config.white_auto = white_auto_;
     config.white_selector = white_selector_;
     config.stop_grab = stop_grab_;
+    config.is_fps_down = is_fps_down_;
+    config.target_fps = target_fps_;
     initialize_flag_ = false;
   }
 
@@ -556,19 +574,10 @@ void HKCameraNodelet::reconfigCB(CameraConfig& config, uint32_t level)
   }
 
   take_photo_ = config.take_photo;
-
   is_fps_down_ = config.is_fps_down;
-  if (is_fps_down_)
-  {
-    ROS_INFO("Fps down mode is on.");
-    FpsDown();
-  }
-  else
-  {
-    ROS_INFO("Fps down mode is off.");
-    d_sub_.shutdown();
-    d_pub_.shutdown();
-  }
+  target_fps_ = std::max(config.target_fps, 1.0);
+  std::lock_guard<std::mutex> lock(fps_down_mutex_);
+  next_pub_time_ = ros::WallTime();
   //  Width offset of image
   //  width_ = config.width_offset;
 }
@@ -602,25 +611,5 @@ bool HKCameraNodelet::enable_resolution_ = false;
 int HKCameraNodelet::resolution_ratio_width_ = 1440;
 int HKCameraNodelet::resolution_ratio_height_ = 1080;
 bool HKCameraNodelet::camera_restart_flag_{};
-
-void HKCameraNodelet::FpsDown()
-{
-  d_sub_ = d_it_.subscribe(camera_raw_, 10, &HKCameraNodelet::imageCallback, this);
-  d_pub_ = d_it_.advertise("/hk_camera/image_raw_down", 10);
-  target_fps_ = 40;
-  last_pub_time_ = ros::Time::now();
-}
-
-void HKCameraNodelet::imageCallback(const sensor_msgs::ImageConstPtr& msg)
-{
-  ros::Time current_time = ros::Time::now();
-  double elapsed_time = (current_time - last_pub_time_).toSec();
-  double target_interval = 1.0 / target_fps_;
-  if (elapsed_time >= target_interval)
-  {
-    d_pub_.publish(msg);
-    last_pub_time_ = current_time;
-  }
-}
 
 }  // namespace hk_camera
